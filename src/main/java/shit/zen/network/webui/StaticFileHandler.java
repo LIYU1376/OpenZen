@@ -7,6 +7,7 @@ import java.io.OutputStream;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
+import shit.zen.utils.misc.Assets;
 
 public class StaticFileHandler extends AbstractHttpHandler {
     private final String resourcePath;
@@ -29,7 +30,7 @@ public class StaticFileHandler extends AbstractHttpHandler {
             relative += "index.html";
         }
         String classpath = this.resourcePath + "/" + relative;
-        InputStream resource = StaticFileHandler.class.getResourceAsStream(classpath);
+        InputStream resource = Assets.open(classpath);
         if (resource == null) {
             return 404;
         }
@@ -42,7 +43,7 @@ public class StaticFileHandler extends AbstractHttpHandler {
 
     @Override
     public void sendResponse(int status, OutputStream out, HttpExchange exchange) throws IOException {
-        InputStream resource = StaticFileHandler.class.getResourceAsStream(this.resourcePath + "/" + status + ".html");
+        InputStream resource = Assets.open(this.resourcePath + "/" + status + ".html");
         if (resource != null) {
             try (resource) {
                 exchange.getResponseHeaders().add("Content-Type", "text/html; charset=utf-8");

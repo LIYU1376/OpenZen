@@ -34,6 +34,10 @@ public class MinecraftPatch {
     public static volatile boolean initialized = false;
     private static HitResult savedHitResult;
 
+    public static void markInitialized() {
+        initialized = true;
+    }
+
     @Inject(method = "tick", desc = "()V")
     public static void onTick(Minecraft minecraft, CallbackInfo callbackInfo) throws Throwable {
         if (!initialized) {

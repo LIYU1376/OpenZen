@@ -35,6 +35,7 @@ import org.objectweb.asm.tree.LdcInsnNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.VarInsnNode;
+import shit.zen.asm.Bootstrap;
 import shit.zen.asm.ILocals;
 import shit.zen.asm.Invocation;
 import shit.zen.asm.InvocationImpl;
@@ -71,10 +72,11 @@ public final class PatchTransformer {
         if (patchAnnotation == null) {
             throw new IllegalArgumentException(patchClass.getName() + " is not @Patch");
         }
+        String patchTargetOwner = Type.getInternalName(patchAnnotation.value());
 
         Map<MethodKey, List<Method>> handlersByTarget = new HashMap<>();
         for (Method handler : patchClass.getDeclaredMethods()) {
-            collectHandler(patchClass, handler, handlersByTarget);
+            collectHandler(patchClass, patchTargetOwner, handler, handlersByTarget);
         }
         LOGGER.info("Loading patch {} -> {} ({} handler(s))",
                 patchClass.getName(), target.name,
@@ -121,7 +123,8 @@ public final class PatchTransformer {
         }
     }
 
-    private static void collectHandler(Class<?> patchClass, Method handler,
+    private static void collectHandler(Class<?> patchClass, String patchTargetOwner,
+                                       Method handler,
                                        Map<MethodKey, List<Method>> handlersByTarget) {
         if (!(handler.isAnnotationPresent(Inject.class)
                 || handler.isAnnotationPresent(Overwrite.class)
@@ -168,6 +171,11 @@ public final class PatchTransformer {
                 throw new IllegalArgumentException("@ModifyLocals " + handler + " must take a single ILocals");
             }
         }
+        // Patch annotations carry the mojmap method name (the jar was compiled
+        // against mojmap, and reobfJar does not rewrite string literals). In a
+        // production Forge environment the live class only has SRG names, so
+        // remap before matching against ClassNode.methods.
+        name = Bootstrap.remapMethod(patchTargetOwner, name, desc);
         handlersByTarget.computeIfAbsent(new MethodKey(name, desc), k -> new ArrayList<>()).add(handler);
     }
 
@@ -331,7 +339,7 @@ public final class PatchTransformer {
         Type returnType = Type.getReturnType(method.desc);
         String[] split = ASMHelpers.splitOwnerName(invokeName);
         String invokeOwner = split[0];
-        String invokeMethod = split[1];
+        String invokeMethod = Bootstrap.remapMethod(split[0], split[1], invokeDesc);
 
         Slice slice = handler.getAnnotation(Inject.class).slice();
         // PatchApplier.applyInvokeInject uses strict owner+name+desc matching.
@@ -462,7 +470,7 @@ public final class PatchTransformer {
         String targetDesc = wrap.targetDesc();
         String[] split = ASMHelpers.splitOwnerName(target);
         String targetOwner = split[0];
-        String targetMethod = split[1];
+        String targetMethod = Bootstrap.remapMethod(split[0], split[1], targetDesc);
 
         // Match what shit.zen.asm.PatchApplier did: accept either owner or name match,
         // so targets pointing at the declaring class (e.g. Entity/getYRot) still hit
@@ -607,10 +615,11 @@ public final class PatchTransformer {
                 }
             } else {
                 String[] split = ASMHelpers.splitOwnerName(at.method());
+                String invokeMethod = Bootstrap.remapMethod(split[0], split[1], at.desc());
                 for (AbstractInsnNode insn : method.instructions) {
                     if (insn instanceof MethodInsnNode m
                             && m.owner.equals(split[0])
-                            && m.name.equals(split[1])
+                            && m.name.equals(invokeMethod)
                             && m.desc.equals(at.desc())) {
                         insertBefore = insn;
                         foundAnchor = true;
@@ -714,16 +723,20 @@ public final class PatchTransformer {
         String[] startSplit = slice.start().method().isEmpty()
                 ? null : ASMHelpers.splitOwnerName(slice.start().method());
         String startDesc = slice.start().desc();
+        String startName = startSplit == null ? null
+                : Bootstrap.remapMethod(startSplit[0], startSplit[1], startDesc);
         String[] endSplit = slice.end().method().isEmpty()
                 ? null : ASMHelpers.splitOwnerName(slice.end().method());
         String endDesc = slice.end().desc();
+        String endName = endSplit == null ? null
+                : Bootstrap.remapMethod(endSplit[0], endSplit[1], endDesc);
         boolean foundStart = defaultStart;
         for (AbstractInsnNode insn : insns) {
             if (!foundStart && startSplit != null && insn instanceof MethodInsnNode m
-                    && m.owner.equals(startSplit[0]) && m.name.equals(startSplit[1]) && m.desc.equals(startDesc)) {
+                    && m.owner.equals(startSplit[0]) && m.name.equals(startName) && m.desc.equals(startDesc)) {
                 foundStart = true;
             } else if (!defaultEnd && endSplit != null && insn instanceof MethodInsnNode m
-                    && m.owner.equals(endSplit[0]) && m.name.equals(endSplit[1]) && m.desc.equals(endDesc)) {
+                    && m.owner.equals(endSplit[0]) && m.name.equals(endName) && m.desc.equals(endDesc)) {
                 break;
             }
             // PatchApplier appends every insn in the slice, not only filter matches.
