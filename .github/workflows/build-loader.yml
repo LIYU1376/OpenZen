@@ -88,11 +88,19 @@ jobs:
       - name: Clone & bootstrap vcpkg
         shell: pwsh
         run: |
+          # Pin vcpkg to the SAME commit as native/vcpkg.json's
+          # "builtin-baseline". A floating HEAD clone made the qtbase port
+          # (and thus its package ABI) drift every time upstream vcpkg moved,
+          # so the restored Qt cache never matched and qtbase was rebuilt
+          # from source (~31 min) on every run. Tag 2026.05.25 ==
+          # d015e31e90838a4c9dfa3eed45979bc70d9357fc and ships qtbase 6.11.0.
+          # Keep this tag and the builtin-baseline in vcpkg.json in lockstep.
+          $vcpkgTag = '2026.05.25'
           $vcpkg = Join-Path $env:GITHUB_WORKSPACE 'vcpkg'
           if (Test-Path $vcpkg) {
               Write-Host "Reusing existing $vcpkg"
           } else {
-              git clone --depth=1 https://github.com/microsoft/vcpkg.git $vcpkg
+              git clone --depth=1 --branch $vcpkgTag https://github.com/microsoft/vcpkg.git $vcpkg
           }
           & "$vcpkg\bootstrap-vcpkg.bat" -disableMetrics
           & "$vcpkg\vcpkg.exe" version
